@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Đường Đua Liên Kết Hóa Học — Hóa Học 10</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Thư viện MQTT.js kết nối thời gian thực 2 điện thoại độc lập mọi host web -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <!-- Google Fonts Be Vietnam Pro hỗ trợ tiếng Việt đầy đủ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
+
+    <style>
+        /* Cấu hình chống tràn ngang và bảo vệ hiển thị chữ trên điện thoại 360px - 430px */
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+            font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 55%, #020617 100%);
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Đảm bảo mọi khối chữ tự động xuống dòng an toàn, không mất chữ */
+        .safe-text {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            white-space: normal;
+        }
+
+        /* Định dạng chuẩn chỉ số dưới và điện tích hóa học */
+        sub, sup {
+            font-size: 73%;
+            line-height: 0;
+            position: relative;
+            vertical-align: baseline;
+        }
+        sup { top: -0.45em; }
+        sub { bottom: -0.22em; }
+
+        /* Hiệu ứng vạch đường đua */
+        .race-lane {
+            background-image: repeating-linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0.08) 0px,
+                rgba(255, 255, 255, 0.08) 10px,
+                transparent 10px,
+                transparent 22px
+            );
+        }
+
+        .racer-move {
+            transition: left 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        /* Nút bấm cảm ứng mượt mà */
+        .btn-touch {
+            transition: transform 0.12s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        .btn-touch:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        /* Hiệu ứng chuyển cảnh */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-up {
+            animation: fadeUp 0.32s ease-out forwards;
+        }
+
+        @keyframes shakeX {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+        .animate-shake {
+            animation: shakeX 0.3s ease-in-out;
+        }
+
+        /* Canvas pháo hoa */
+        #confetti-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 60;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-start">
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Container chính tối ưu Mobile-First -->
+    <div class="w-full max-w-xl px-3 sm:px-5 py-3 sm:py-5 flex flex-col min-h-screen">
+
+        <!-- HEADER CHUNG -->
+        <header class="w-full flex items-center justify-between gap-2 pb-3 border-b border-slate-700/80">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-600 flex items-center justify-center shadow-lg shrink-0">
+                    <!-- Biểu tượng mô hình nguyên tử SVG -->
+                    <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+                        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(30 12 12)"/>
+                        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(150 12 12)"/>
+                        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(90 12 12)"/>
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white safe-text leading-tight">
+                        ĐƯỜNG ĐUA LIÊN KẾT HÓA HỌC
+                    </h1>
+                    <p class="text-xs text-cyan-300 safe-text">
+                        Phiếu học tập tương tác • Hóa học 10
+                    </p>
+                </div>
+            </div>
+
+            <!-- Nút Sổ tay & Âm thanh -->
+            <div class="flex items-center gap-1.5 shrink-0">
+                <button id="btn-open-notebook" type="button" class="btn-touch px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 text-xs font-bold flex items-center gap-1">
+                    <span>📖</span>
+                    <span>Sổ tay</span>
+                </button>
+                <button id="btn-toggle-sound" type="button" title="Bật/Tắt âm thanh" class="btn-touch p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-cyan-300">
+                    <span id="sound-icon" class="text-sm leading-none">🔊</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- =========================================================
+             MÀN HÌNH 1: CHỌN CHẾ ĐỘ & TẠO / VÀO PHÒNG
+             ========================================================= -->
+        <main id="screen-home" class="w-full flex-1 flex flex-col justify-center py-4 animate-fade-up">
+            <div class="bg-slate-800/85 backdrop-blur-md border border-slate-700 rounded-2xl p-4 sm:p-6 shadow-2xl">
+                <div class="text-center mb-4">
+                    <span class="inline-block px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-1.5">
+                        Chuyên đề Liên kết Hóa học
+                    </span>
+                    <h2 class="text-lg sm:text-2xl font-extrabold text-white safe-text leading-snug">
+                        Liên Kết Ion &amp; Liên Kết Cộng Hóa Trị
+                    </h2>
+                    <p class="text-xs sm:text-sm text-slate-300 mt-1 safe-text">
+                        Vượt qua 15 thử thách bản chất hóa học để đưa phi thuyền đội bạn cán đích đầu tiên!
+                    </p>
+                </div>
+
+                <!-- Tab chọn chế độ: 2 Điện thoại (Online) vs 1 Điện thoại (Offline) -->
+                <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-950/90 border border-slate-700/80 mb-4">
+                    <button id="tab-online" type="button" class="btn-touch py-2.5 px-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold text-xs sm:text-sm shadow">
+                        🌐 Đua 2 Điện Thoại
+                    </button>
+                    <button id="tab-offline" type="button" class="btn-touch py-2.5 px-2 rounded-lg text-slate-300 hover:text-white font-bold text-xs sm:text-sm">
+                        📱 Chơi 1 Điện Thoại
+                    </button>
+                </div>
+
+                <!-- PANEL 1: THI ĐẤU 2 ĐIỆN THOẠI QUA MÃ 4 SỐ -->
+                <div id="panel-online" class="space-y-4">
+                    <div>
+                        <label for="online-player-name" class="block text-xs font-bold uppercase tracking-wide text-slate-300 mb-1.5">
+                            Tên học sinh / Tên đội của bạn
+                        </label>
+                        <input id="online-player-name" type="text" maxlength="20" placeholder="Ví dụ: Minh Anh 10A1..."
+                            class="w-full px-3.5 py-3 rounded-xl bg-slate-900 border border-slate-600 text-white text-base font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    </div>
+
+                    <!-- Khối 1: Tạo phòng mới (Đội Đỏ) -->
+                    <div class="p-3.5 rounded-2xl bg-gradient-to-br from-rose-500/15 to-orange-500/10 border border-rose-500/40">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-extrabold uppercase tracking-wide text-rose-300 flex items-center gap-1.5">
+                                <span>⚡</span> Bạn là Người chơi 1 (Đội Đỏ)
+                            </span>
+                            <span class="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 font-semibold">Chủ phòng</span>
+                        </div>
+                        <p class="text-xs text-slate-300 mb-3 safe-text">
+                            Bấm nút bên dưới để lấy <strong>mã phòng 4 số</strong> gửi cho bạn cùng đua.
+                        </p>
+                        <button id="btn-create-room" type="button" class="btn-touch w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white font-extrabold text-sm sm:text-base shadow-lg">
+                            + TẠO PHÒNG THI ĐẤU (2 MÁY)
+                        </button>
+                    </div>
+
+                    <!-- Khối 2: Vào phòng đã có (Đội Xanh) -->
+                    <div class="p-3.5 rounded-2xl bg-gradient-to-br from-cyan-500/15 to-blue-500/10 border border-cyan-500/40">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-extrabold uppercase tracking-wide text-cyan-300 flex items-center gap-1.5">
+                                <span>🔗</span> Bạn là Người chơi 2 (Đội Xanh)
+                            </span>
+                            <span class="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-200 font-semibold">Nhập mã 4 số</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <input id="join-room-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Mã 4 số"
+                                class="w-32 sm:w-36 px-3 py-3 rounded-xl bg-slate-950 border border-cyan-500/50 text-center text-xl font-black tracking-[0.2em] text-cyan-300 placeholder:text-slate-600 placeholder:text-sm placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-cyan-400 shrink-0">
+                            <button id="btn-join-room" type="button" class="btn-touch flex-1 py-3 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-sm shadow-lg">
+                                VÀO PHÒNG →
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Hộp thông báo trạng thái kết nối -->
+                    <div id="home-status-box" class="hidden p-3 rounded-xl text-xs sm:text-sm font-semibold text-center safe-text"></div>
+                </div>
+
+                <!-- PANEL 2: CHƠI CHUNG 1 ĐIỆN THOẠI (OFFLINE 100%) -->
+                <div id="panel-offline" class="hidden space-y-4">
+                    <div class="space-y-3">
+                        <div class="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40">
+                            <label for="off-team1-name" class="block text-xs font-bold text-rose-300 mb-1">
+                                ⚡ Tên Đội Đỏ (Chiến Binh Ion)
+                            </label>
+                            <input id="off-team1-name" type="text" maxlength="22" value="Chiến Binh Ion"
+                                class="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-rose-500/40 text-white text-base font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400">
+                        </div>
+
+                        <div class="p-3 rounded-xl bg-cyan-500/15 border border-cyan-500/40">
+                            <label for="off-team2-name" class="block text-xs font-bold text-cyan-300 mb-1">
+                                🔗 Tên Đội Xanh (Cộng Hóa Trị)
+                            </label>
+                            <input id="off-team2-name" type="text" maxlength="22" value="Biệt Đội Cộng Hóa Trị"
+                                class="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-cyan-500/40 text-white text-base font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-400">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wide text-slate-300 mb-2">
+                            Chọn kiểu thi đấu trên 1 máy
+                        </label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button id="off-mode-turn" type="button" class="btn-touch p-3 rounded-xl border-2 border-indigo-400 bg-indigo-500/20 text-left">
+                                <div class="text-sm font-extrabold text-white">🔄 Luân phiên từng lượt</div>
+                                <div class="text-xs text-slate-300 mt-0.5 safe-text">2 đội thay nhau trả lời từng câu hỏi</div>
+                            </button>
+                            <button id="off-mode-speed" type="button" class="btn-touch p-3 rounded-xl border border-slate-600 bg-slate-900/70 text-left">
+                                <div class="text-sm font-extrabold text-white">🔔 Bấm chuông giành quyền</div>
+                                <div class="text-xs text-slate-300 mt-0.5 safe-text">Đội nào bấm nút nhanh hơn được trả lời</div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button id="btn-start-offline" type="button" class="btn-touch w-full py-4 px-5 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:to-pink-400 text-white font-extrabold text-base shadow-xl">
+                        🚀 BẮT ĐẦU ĐUA NGAY (1 MÁY)
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- =========================================================
+             MÀN HÌNH 2: SẢNH CHỜ PHÒNG ONLINE (MÃ 4 CHỮ SỐ)
+             ========================================================= -->
+        <main id="screen-lobby" class="w-full flex-1 flex flex-col justify-center py-4 hidden animate-fade-up">
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 sm:p-6 shadow-2xl">
+                <div class="flex items-center justify-between gap-2 mb-4">
+                    <button id="btn-leave-lobby" type="button" class="btn-touch px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-200">
+                        ← Quay lại
+                    </button>
+                    <span id="lobby-conn-badge" class="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span id="lobby-conn-text">Đã mở phòng trực tuyến</span>
+                    </span>
+                </div>
+
+                <!-- Hiển thị Mã Phòng 4 Chữ Số to rõ -->
+                <div class="text-center p-4 rounded-2xl bg-slate-950/90 border-2 border-dashed border-amber-400/70 mb-4">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Mã Phòng 4 Số (Đọc cho bạn cùng chơi nhập)
+                    </div>
+                    <div id="lobby-code-display" class="text-4xl sm:text-5xl font-black tracking-[0.25em] text-amber-300 my-2 select-all">
+                        0000
+                    </div>
+                    <button id="btn-copy-room-code" type="button" class="btn-touch inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold shadow">
+                        <span>📋</span>
+                        <span id="copy-room-label">Sao chép mã phòng</span>
+                    </button>
+                </div>
+
+                <!-- Danh sách 2 Đội trong phòng -->
+                <div class="grid grid-cols-2 gap-2.5 mb-4">
+                    <!-- Đội Đỏ -->
+                    <div class="p-3.5 rounded-2xl bg-gradient-to-b from-rose-500/20 to-orange-500/10 border-2 border-rose-500/60 text-center">
+                        <div class="text-2xl mb-1">⚡</div>
+                        <div class="text-[11px] font-extrabold uppercase text-rose-300">Đội Đỏ</div>
+                        <div id="lobby-p1-name" class="text-sm font-extrabold text-white mt-1 safe-text">Chủ phòng</div>
+                        <div class="mt-1.5 inline-block px-2 py-0.5 rounded-full bg-rose-500/30 text-[11px] font-bold text-rose-200">
+                            Sẵn sàng ✓
+                        </div>
+                    </div>
+
+                    <!-- Đội Xanh -->
+                    <div id="lobby-p2-card" class="p-3.5 rounded-2xl bg-slate-900/90 border-2 border-dashed border-slate-600 text-center">
+                        <div id="lobby-p2-icon" class="text-2xl mb-1 opacity-40">🔗</div>
+                        <div class="text-[11px] font-extrabold uppercase text-cyan-300">Đội Xanh</div>
+                        <div id="lobby-p2-name" class="text-sm font-extrabold text-slate-400 mt-1 safe-text">Đang chờ bạn vào...</div>
+                        <div id="lobby-p2-status" class="mt-1.5 inline-block px-2 py-0.5 rounded-full bg-slate-800 text-[11px] font-bold text-slate-400">
+                            Chưa vào
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Khu vực điều khiển bắt đầu -->
+                <div id="lobby-controls" class="space-y-2.5">
+                    <p id="lobby-guide-text" class="text-xs text-center text-amber-200 safe-text">
+                        ⏳ Hãy gửi mã 4 số cho bạn của bạn mở trang web này và bấm "Vào Phòng".
+                    </p>
+
+                    <button id="btn-online-start-race" type="button" disabled class="btn-touch w-full py-3.5 px-4 rounded-xl bg-slate-700 text-slate-400 font-extrabold text-sm sm:text-base cursor-not-allowed">
+                        ĐANG CHỜ ĐỐI THỦ VÀO PHÒNG...
+                    </button>
+
+                    <!-- Nút dự phòng thông minh: Vào đua ngay với Máy Bot hoặc 1 máy -->
+                    <button id="btn-start-vs-bot" type="button" class="btn-touch w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-700 border border-emerald-500/50 text-emerald-300 font-bold text-xs sm:text-sm">
+                        🤖 Vào Đua Ngay (Đấu Với Máy Bot / Chơi Thử)
+                    </button>
+                </div>
+
+                <!-- Màn đếm ngược 3 - 2 - 1 -->
+                <div id="lobby-countdown" class="hidden text-center py-3">
+                    <div class="text-xs font-bold uppercase tracking-widest text-emerald-300 mb-1">Chuẩn bị xuất phát!</div>
+                    <div id="countdown-number" class="text-5xl font-black text-amber-400">3</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- =========================================================
+             MÀN HÌNH 3: ĐƯỜNG ĐUA & CÂU HỎI HÓA HỌC
+             ========================================================= -->
+        <main id="screen-race" class="w-full flex-1 flex flex-col gap-3 py-2 hidden">
+
+            <!-- KHỐI ĐƯỜNG ĐUA TRỰC QUAN 2 LÀN -->
+            <section class="w-full bg-slate-800/90 border border-slate-700 rounded-2xl p-3 shadow-lg">
+                <div class="flex items-center justify-between text-xs mb-2">
+                    <span id="race-q-progress" class="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-extrabold">
+                        Câu 1 / 15
+                    </span>
+                    <span id="race-mode-tag" class="font-bold text-amber-300">
+                        🏁 Đích: 225 điểm
+                    </span>
+                </div>
+
+                <!-- Làn đua Đội Đỏ (Chiến Binh Ion) -->
+                <div class="mb-2.5">
+                    <div class="flex justify-between items-center text-xs mb-1 gap-2">
+                        <span id="lane1-name" class="font-bold text-rose-300 truncate">⚡ Chiến Binh Ion</span>
+                        <span id="lane1-score" class="font-black text-rose-400 shrink-0">0 đ</span>
+                    </div>
+                    <div class="relative w-full h-7 bg-slate-950 rounded-full border border-rose-500/40 race-lane flex items-center overflow-hidden">
+                        <div id="lane1-fill" class="h-full bg-gradient-to-r from-rose-600/50 to-orange-500/80 rounded-l-full racer-move" style="width: 6%;"></div>
+                        <div class="absolute right-2.5 top-0 bottom-0 w-1 bg-amber-400/80"></div>
+                        <div id="lane1-rocket" class="absolute racer-move text-lg leading-none select-none" style="left: 2%;">🚀</div>
+                    </div>
+                </div>
+
+                <!-- Làn đua Đội Xanh (Cộng Hóa Trị) -->
+                <div>
+                    <div class="flex justify-between items-center text-xs mb-1 gap-2">
+                        <span id="lane2-name" class="font-bold text-cyan-300 truncate">🔗 Biệt Đội Cộng Hóa Trị</span>
+                        <span id="lane2-score" class="font-black text-cyan-400 shrink-0">0 đ</span>
+                    </div>
+                    <div class="relative w-full h-7 bg-slate-950 rounded-full border border-cyan-500/40 race-lane flex items-center overflow-hidden">
+                        <div id="lane2-fill" class="h-full bg-gradient-to-r from-cyan-600/50 to-blue-500/80 rounded-l-full racer-move" style="width: 6%;"></div>
+                        <div class="absolute right-2.5 top-0 bottom-0 w-1 bg-amber-400/80"></div>
+                        <div id="lane2-rocket" class="absolute racer-move text-lg leading-none select-none" style="left: 2%;">🛸</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- THANH TRẠNG THÁI LƯỢT & ĐỒNG HỒ -->
+            <section class="w-full flex items-center justify-between gap-2 bg-slate-800/85 border border-slate-700 rounded-xl px-3 py-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span id="status-turn-icon" class="text-lg shrink-0">⚡</span>
+                    <div class="min-w-0">
+                        <div id="status-turn-sub" class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Đang thi đấu</div>
+                        <div id="status-turn-main" class="text-xs sm:text-sm font-extrabold text-rose-300 truncate">Đội Đỏ vs Đội Xanh</div>
+                    </div>
+                </div>
+
+                <div id="timer-pill" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-600 shrink-0">
+                    <span class="text-sm">⏱️</span>
+                    <span id="timer-value" class="font-black text-sm sm:text-base text-white tabular-nums">20s</span>
+                </div>
+            </section>
+
+            <!-- CẢNH BÁO KHÓA 3 GIÂY KHI CHỌN SAI (ONLINE / BOT) -->
+            <div id="penalty-alert" class="hidden w-full p-2.5 rounded-xl bg-rose-950/90 border border-rose-500 text-center text-xs sm:text-sm font-bold text-rose-200 safe-text">
+                ❌ Chưa chính xác! Khóa nút trong <span id="penalty-countdown" class="text-amber-300 font-black">3</span> giây (nhường cơ hội cho đối thủ)...
+            </div>
+
+            <!-- BẢNG BẤM CHUÔNG GIÀNH QUYỀN (CHẾ ĐỘ 1 MÁY BẤM CHUÔNG) -->
+            <section id="offline-buzzer-box" class="hidden w-full bg-slate-800/95 border border-indigo-500/60 rounded-2xl p-3.5 text-center animate-fade-up">
+                <p class="text-xs font-bold text-indigo-200 mb-2.5 safe-text">
+                    🔔 Đọc câu hỏi bên dưới và bấm nút đội mình để giành quyền trả lời!
+                </p>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button id="btn-buzz-1" type="button" class="btn-touch py-3.5 px-2 rounded-xl bg-gradient-to-b from-rose-500 to-orange-600 text-white font-extrabold text-xs sm:text-sm shadow-lg safe-text">
+                        ⚡ <span id="buzz-label-1">Đội Đỏ</span>
+                    </button>
+                    <button id="btn-buzz-2" type="button" class="btn-touch py-3.5 px-2 rounded-xl bg-gradient-to-b from-cyan-500 to-blue-600 text-white font-extrabold text-xs sm:text-sm shadow-lg safe-text">
+                        🔗 <span id="buzz-label-2">Đội Xanh</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- THẺ CÂU HỎI & 4 NÚT ĐÁP ÁN LỚN CHO NGÓN TAY CÁI -->
+            <section id="question-box" class="w-full bg-slate-800/90 border border-slate-700 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-3 animate-fade-up">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span id="q-topic-badge" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                        Bản chất liên kết
+                    </span>
+                    <span id="q-score-rule" class="text-xs text-slate-400 font-medium">
+                        +10đ + tối đa +5đ tốc độ
+                    </span>
+                </div>
+
+                <h3 id="q-content" class="text-base sm:text-lg font-bold text-white leading-relaxed safe-text">
+                    Đang tải câu hỏi...
+                </h3>
+
+                <div id="answers-list" class="flex flex-col gap-2.5 mt-1">
+                    <!-- 4 nút đáp án A, B, C, D cao tối thiểu 56px -->
+                </div>
+            </section>
+
+            <!-- KHUNG GIẢI MÃ BẢN CHẤT HÓA HỌC SAU MỖI CÂU -->
+            <section id="explanation-box" class="hidden w-full rounded-2xl p-4 sm:p-5 border-2 shadow-xl animate-fade-up">
+                <div class="flex items-start gap-3">
+                    <div id="exp-badge-icon" class="w-8 h-8 rounded-full flex items-center justify-center text-base font-black shrink-0 mt-0.5">
+                        ✓
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h4 id="exp-heading" class="text-base font-extrabold mb-0.5 safe-text">Chính xác!</h4>
+                        <p id="exp-sub-points" class="text-xs font-bold uppercase tracking-wide mb-2.5"></p>
+                        <div class="p-3 rounded-xl bg-slate-950/75 border border-white/10">
+                            <div class="text-xs font-extrabold text-amber-300 uppercase tracking-wider mb-1">
+                                🧪 Bản chất Hóa học:
+                            </div>
+                            <p id="exp-body" class="text-sm text-slate-100 leading-relaxed safe-text"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-next-step" type="button" class="btn-touch mt-4 w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-extrabold text-sm sm:text-base shadow-lg flex items-center justify-center gap-2">
+                    <span id="btn-next-label">Câu tiếp theo</span>
+                    <span>→</span>
+                </button>
+            </section>
+        </main>
+
+        <!-- =========================================================
+             MÀN HÌNH 4: TỔNG KẾT & BẢNG VINH DANH
+             ========================================================= -->
+        <main id="screen-summary" class="w-full flex-1 flex flex-col gap-4 py-3 hidden animate-fade-up">
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 text-center shadow-2xl">
+                <div class="text-4xl mb-1.5">🏆</div>
+                <span class="inline-block px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2">
+                    Tổng Kết Đường Đua
+                </span>
+                <h2 id="summary-winner-title" class="text-xl sm:text-2xl font-extrabold text-white safe-text">
+                    Chúc mừng đội chiến thắng!
+                </h2>
+                <p id="summary-winner-desc" class="text-xs sm:text-sm text-slate-300 mt-1 safe-text">
+                    Hoàn thành xuất sắc 15 câu hỏi về Liên kết ion &amp; Liên kết cộng hóa trị.
+                </p>
+
+                <!-- Thống kê 2 đội -->
+                <div class="grid grid-cols-2 gap-3 mt-4">
+                    <div id="sum-card-1" class="p-3.5 rounded-2xl bg-slate-900 border-2 border-rose-500/50 flex flex-col items-center">
+                        <span class="text-2xl mb-1">🚀</span>
+                        <div id="sum-name-1" class="text-xs sm:text-sm font-bold text-rose-300 text-center safe-text">Đội Đỏ</div>
+                        <div id="sum-score-1" class="text-2xl font-black text-white mt-1">0 đ</div>
+                        <div id="sum-acc-1" class="text-xs text-slate-400 mt-1">Đúng: 0/15 câu (0%)</div>
+                    </div>
+
+                    <div id="sum-card-2" class="p-3.5 rounded-2xl bg-slate-900 border-2 border-cyan-500/50 flex flex-col items-center">
+                        <span class="text-2xl mb-1">🛸</span>
+                        <div id="sum-name-2" class="text-xs sm:text-sm font-bold text-cyan-300 text-center safe-text">Đội Xanh</div>
+                        <div id="sum-score-2" class="text-2xl font-black text-white mt-1">0 đ</div>
+                        <div id="sum-acc-2" class="text-xs text-slate-400 mt-1">Đúng: 0/15 câu (0%)</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-2.5 mt-5">
+                    <button id="btn-summary-notebook" type="button" class="btn-touch flex-1 py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm">
+                        📖 Sổ Tay Tổng Hợp Kiến Thức
+                    </button>
+                    <button id="btn-toggle-review" type="button" class="btn-touch flex-1 py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm">
+                        📋 Xem Lại 15 Đáp Án
+                    </button>
+                </div>
+
+                <button id="btn-back-home" type="button" class="btn-touch mt-2.5 w-full py-3 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm">
+                    🔄 Quay Về Trang Chủ Đua Lại
+                </button>
+            </div>
+
+            <!-- Danh sách 15 câu ôn tập -->
+            <div id="summary-review-panel" class="hidden bg-slate-800/90 border border-slate-700 rounded-2xl p-4 space-y-3">
+                <h3 class="text-sm sm:text-base font-extrabold text-amber-300">
+                    📚 PHIẾU ÔN TẬP 15 CÂU HỎI &amp; GIẢI THÍCH
+                </h3>
+                <div id="summary-review-items" class="space-y-2.5"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- =========================================================
+         MODAL SỔ TAY SO SÁNH LIÊN KẾT ION VS LIÊN KẾT CỘNG HÓA TRỊ
+         ========================================================= -->
+    <div id="notebook-modal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 hidden">
+        <div class="bg-slate-800 border border-slate-600 rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col shadow-2xl animate-fade-up">
+            <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                <h3 class="text-base font-extrabold text-amber-300 flex items-center gap-2">
+                    <span>📖</span> Sổ Tay Tổng Hợp Kiến Thức
+                </h3>
+                <button id="btn-close-notebook" type="button" class="btn-touch w-8 h-8 rounded-lg bg-slate-700 text-white font-bold">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-4 overflow-y-auto space-y-3 text-xs sm:text-sm text-slate-200 leading-relaxed safe-text">
+                <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                    <div class="font-extrabold text-rose-300 mb-1">1. Liên Kết Ion (Ví dụ: NaCl, MgCl<sub>2</sub>, CaO)</div>
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><strong>Bản chất:</strong> Lực hút tĩnh điện giữa các ion mang điện tích trái dấu (cation M<sup>n+</sup> và anion X<sup>m-</sup>).</li>
+                        <li><strong>Cơ chế:</strong> Kim loại điển hình nhường electron, phi kim điển hình nhận electron để đạt cấu hình bền của khí hiếm.</li>
+                        <li><strong>Tính chất:</strong> Chất rắn ở điều kiện thường, nhiệt độ nóng chảy &amp; sôi cao; dẫn điện khi nóng chảy hoặc tan trong nước.</li>
+                    </ul>
+                </div>
+
+                <div class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/40">
+                    <div class="font-extrabold text-cyan-300 mb-1">2. Liên Kết Cộng Hóa Trị (Ví dụ: H<sub>2</sub>, N<sub>2</sub>, HCl, H<sub>2</sub>O, CO<sub>2</sub>)</div>
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><strong>Bản chất:</strong> Tạo nên bởi một hay nhiều cặp electron dùng chung giữa hai nguyên tử (thường là phi kim).</li>
+                        <li><strong>Không phân cực:</strong> Cặp e dùng chung không lệch về phía nguyên tử nào (H<sub>2</sub>, Cl<sub>2</sub>, O<sub>2</sub>, N<sub>2</sub>).</li>
+                        <li><strong>Phân cực:</strong> Cặp e dùng chung lệch về phía nguyên tử có độ âm điện lớn hơn (HCl, H<sub>2</sub>O, NH<sub>3</sub>, CO<sub>2</sub>).</li>
+                        <li><strong>Liên kết cho - nhận:</strong> Cặp e dùng chung chỉ do một nguyên tử đóng góp (ví dụ trong NH<sub>4</sub><sup>+</sup>, HNO<sub>3</sub>, CO).</li>
+                    </ul>
+                </div>
+
+                <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/40">
+                    <div class="font-extrabold text-indigo-300 mb-1">3. Hiệu Độ Âm Điện (Δχ) &amp; Hợp Chất Hỗn Hợp</div>
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><strong>0 &le; Δχ &lt; 0,4:</strong> Liên kết cộng hóa trị không phân cực.</li>
+                        <li><strong>0,4 &le; Δχ &lt; 1,7:</strong> Liên kết cộng hóa trị phân cực.</li>
+                        <li><strong>Δχ &ge; 1,7:</strong> Liên kết ion.</li>
+                        <li><strong>Chứa cả 2 loại liên kết:</strong> NH<sub>4</sub>Cl, NaOH, CaCO<sub>3</sub>, KNO<sub>3</sub> (có liên kết ion giữa cation và anion đa nguyên tử, bên trong anion/cation đa nguyên tử là liên kết cộng hóa trị).</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-slate-700 text-right">
+                <button id="btn-ok-notebook" type="button" class="btn-touch w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm">
+                    Đã nắm vững kiến thức
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. NGÂN HÀNG 15 CÂU HỎI CHUẨN BẢN CHẤT HÓA HỌC 10 (CHƯƠNG TRÌNH GDPT 2018)
+         * ============================================================================
+         */
+        const CHEMISTRY_QUESTIONS = [
+            {
+                topic: "Bản chất liên kết ion",
+                question: "Bản chất của liên kết ion trong tinh thể muối ăn (NaCl) là gì?",
+                options: [
+                    "Sự dùng chung 1 cặp electron giữa nguyên tử Na và nguyên tử Cl.",
+                    "Lực hút tĩnh điện giữa các ion mang điện tích trái dấu Na<sup>+</sup> và Cl<sup>-</sup>.",
+                    "Lực hút giữa các nguyên tử kim loại Na với đám mây electron tự do.",
+                    "Cặp electron dùng chung chỉ do nguyên tử Cl đóng góp cho nguyên tử Na."
+                ],
+                correct: 1,
+                explanation: "Nguyên tử Na nhường 1 electron tạo cation Na<sup>+</sup>, nguyên tử Cl nhận 1 electron tạo anion Cl<sup>-</sup>. Hai ion mang điện tích trái dấu hút nhau bằng lực hút tĩnh điện tạo thành liên kết ion."
+            },
+            {
+                topic: "Sự hình thành ion",
+                question: "Khi hình thành phân tử MgCl<sub>2</sub> từ nguyên tử Mg (Z = 12) và Cl (Z = 17), quá trình nhường - nhận electron diễn ra như thế nào?",
+                options: [
+                    "Mỗi nguyên tử Mg nhường 2 electron cho 2 nguyên tử Cl (mỗi Cl nhận 1e) tạo ion Mg<sup>2+</sup> và 2 ion Cl<sup>-</sup>.",
+                    "Nguyên tử Mg nhận 2 electron từ 2 nguyên tử Cl để tạo thành anion Mg<sup>2-</sup>.",
+                    "Nguyên tử Mg và 2 nguyên tử Cl góp chung 2 cặp electron hóa trị.",
+                    "Mỗi nguyên tử Mg nhường 1 electron cho 1 nguyên tử Cl tạo ion Mg<sup>+</sup> và Cl<sup>-</sup>."
+                ],
+                correct: 0,
+                explanation: "Mg (2,8,2) nhường 2 electron lớp ngoài cùng để đạt cấu hình bền vững của khí hiếm Ne (2,8) tạo Mg<sup>2+</sup>; hai nguyên tử Cl (2,8,7) mỗi nguyên tử nhận 1 electron tạo thành 2 ion Cl<sup>-</sup> (2,8,8)."
+            },
+            {
+                topic: "Bản chất liên kết cộng hóa trị",
+                question: "Liên kết cộng hóa trị được hình thành giữa hai nguyên tử bằng cách nào?",
+                options: [
+                    "Một nguyên tử chuyển hẳn electron sang nguyên tử còn lại.",
+                    "Tạo nên một hay nhiều cặp electron dùng chung giữa hai nguyên tử.",
+                    "Lực hút tĩnh điện giữa hai ion cùng mang điện tích âm.",
+                    "Sự tương tác giữa các hạt nhân nguyên tử với nhau."
+                ],
+                correct: 1,
+                explanation: "Liên kết cộng hóa trị được tạo thành giữa hai nguyên tử (thường là các nguyên tử phi kim) bằng một hay nhiều cặp electron dùng chung để cả hai đạt cấu hình electron bền vững của khí hiếm."
+            },
+            {
+                topic: "CHT không phân cực",
+                question: "Phân tử nào sau đây chứa liên kết cộng hóa trị không phân cực?",
+                options: [
+                    "HCl",
+                    "H<sub>2</sub>O",
+                    "N<sub>2</sub>",
+                    "NH<sub>3</sub>"
+                ],
+                correct: 2,
+                explanation: "Phân tử N<sub>2</sub> gồm hai nguyên tử Nitrogen giống hệt nhau nên độ âm điện bằng nhau, cặp electron dùng chung không bị lệch về phía nguyên tử nào → liên kết cộng hóa trị không phân cực."
+            },
+            {
+                topic: "CHT phân cực",
+                question: "Vì sao liên kết trong phân tử HCl là liên kết cộng hóa trị phân cực?",
+                options: [
+                    "Vì cặp electron dùng chung bị hút lệch về phía nguyên tử Cl có độ âm điện lớn hơn.",
+                    "Vì nguyên tử H nhường hẳn 1 electron cho nguyên tử Cl tạo ion H<sup>+</sup>.",
+                    "Vì cặp electron dùng chung nằm chính giữa hai hạt nhân H và Cl.",
+                    "Vì độ âm điện của H lớn hơn độ âm điện của Cl."
+                ],
+                correct: 0,
+                explanation: "Độ âm điện của Cl (3,16) lớn hơn H (2,20) nên cặp electron dùng chung bị kéo lệch về phía Cl (tích một phần điện tích âm δ<sup>-</sup>), còn H mang một phần điện tích dương δ<sup>+</sup>."
+            },
+            {
+                topic: "Liên kết đơn, đôi, ba",
+                question: "Trong các phân tử H<sub>2</sub>, O<sub>2</sub>, N<sub>2</sub>, Cl<sub>2</sub>, phân tử nào có liên kết ba bền vững giữa hai nguyên tử?",
+                options: [
+                    "H<sub>2</sub>",
+                    "Cl<sub>2</sub>",
+                    "O<sub>2</sub>",
+                    "N<sub>2</sub>"
+                ],
+                correct: 3,
+                explanation: "Mỗi nguyên tử N (Z = 7) có 5 electron lớp ngoài cùng, cần góp chung 3 electron để đạt bát tử (8e). Do đó hai nguyên tử N dùng chung 3 cặp electron tạo liên kết ba (N≡N) rất bền."
+            },
+            {
+                topic: "Cấu tạo phân tử CO₂",
+                question: "Trong phân tử khí carbonic (CO<sub>2</sub>), nguyên tử Carbon liên kết với hai nguyên tử Oxygen bằng:",
+                options: [
+                    "2 liên kết đôi cộng hóa trị phân cực (O=C=O).",
+                    "2 liên kết đơn cộng hóa trị không phân cực (O–C–O).",
+                    "2 liên kết ion giữa C<sup>4+</sup> và hai ion O<sup>2-</sup>.",
+                    "1 liên kết ba và 1 liên kết đơn."
+                ],
+                correct: 0,
+                explanation: "C (4e hóa trị) góp chung với mỗi nguyên tử O (6e hóa trị) 2 cặp electron tạo 2 liên kết đôi (O=C=O). Vì độ âm điện O (3,44) > C (2,55) nên mỗi liên kết C=O là cộng hóa trị phân cực."
+            },
+            {
+                topic: "Liên kết cho - nhận",
+                question: "Liên kết cho - nhận (một dạng đặc biệt của liên kết cộng hóa trị) có đặc điểm nào sau đây?",
+                options: [
+                    "Cặp electron dùng chung chỉ do một nguyên tử đóng góp.",
+                    "Hai nguyên tử góp số electron bằng nhau để dùng chung.",
+                    "Được hình thành giữa kim loại kiềm và halogen.",
+                    "Không làm thay đổi số electron lớp ngoài cùng của các nguyên tử."
+                ],
+                correct: 0,
+                explanation: "Trong liên kết cho - nhận, cặp electron dùng chung chỉ do một nguyên tử (nguyên tử cho) cung cấp cho nguyên tử còn lại có orbital trống (nguyên tử nhận), ví dụ trong ion NH<sub>4</sub><sup>+</sup> hoặc phân tử CO."
+            },
+            {
+                topic: "Hiệu độ âm điện (Δχ)",
+                question: "Cho độ âm điện của Ca là 1,00 và của O là 3,44. Dựa vào hiệu độ âm điện (Δχ), liên kết trong phân tử CaO thuộc loại nào?",
+                options: [
+                    "Liên kết cộng hóa trị không phân cực.",
+                    "Liên kết cộng hóa trị phân cực.",
+                    "Liên kết ion.",
+                    "Liên kết kim loại."
+                ],
+                correct: 2,
+                explanation: "Hiệu độ âm điện Δχ = 3,44 - 1,00 = 2,44 ≥ 1,7. Theo quy tắc hiệu độ âm điện, liên kết trong CaO là liên kết ion (gồm cation Ca<sup>2+</sup> và anion O<sup>2-</sup>)."
+            },
+            {
+                topic: "Hiệu độ âm điện (Δχ)",
+                question: "Cho độ âm điện của H là 2,20 và của O là 3,44. Liên kết O–H trong phân tử nước (H<sub>2</sub>O) thuộc loại nào?",
+                options: [
+                    "Liên kết cộng hóa trị phân cực (vì 0,4 ≤ Δχ = 1,24 < 1,7).",
+                    "Liên kết cộng hóa trị không phân cực (vì Δχ < 0,4).",
+                    "Liên kết ion (vì Δχ ≥ 1,7).",
+                    "Liên kết cho - nhận."
+                ],
+                correct: 0,
+                explanation: "Hiệu độ âm điện Δχ = 3,44 - 2,20 = 1,24 nằm trong khoảng 0,4 ≤ Δχ < 1,7 nên liên kết O–H là liên kết cộng hóa trị phân cực, cặp electron lệch về phía Oxygen."
+            },
+            {
+                topic: "Hợp chất chứa cả 2 loại liên kết",
+                question: "Hợp chất nào sau đây vừa chứa liên kết ion vừa chứa liên kết cộng hóa trị?",
+                options: [
+                    "NaCl",
+                    "NH<sub>4</sub>Cl",
+                    "H<sub>2</sub>O",
+                    "MgCl<sub>2</sub>"
+                ],
+                correct: 1,
+                explanation: "Trong tinh thể NH<sub>4</sub>Cl có liên kết ion giữa cation NH<sub>4</sub><sup>+</sup> và anion Cl<sup>-</sup>; đồng thời bên trong ion NH<sub>4</sub><sup>+</sup> có các liên kết cộng hóa trị N–H (gồm 3 liên kết CHT phân cực và 1 liên kết cho - nhận)."
+            },
+            {
+                topic: "Hợp chất chứa cả 2 loại liên kết",
+                question: "Trong phân tử Sodium hydroxide (NaOH), các loại liên kết hóa học tồn tại là:",
+                options: [
+                    "Chỉ có liên kết ion giữa Na<sup>+</sup>, O<sup>2-</sup> và H<sup>+</sup>.",
+                    "Chỉ có liên kết cộng hóa trị giữa các nguyên tử.",
+                    "Liên kết ion giữa Na<sup>+</sup> và OH<sup>-</sup>; liên kết cộng hóa trị phân cực giữa O và H.",
+                    "Liên kết cộng hóa trị không phân cực giữa Na và O."
+                ],
+                correct: 2,
+                explanation: "NaOH là hợp chất ion tạo bởi cation Na<sup>+</sup> và anion hydroxide OH<sup>-</sup> (lực hút tĩnh điện), còn trong nhóm OH<sup>-</sup> thì O và H liên kết với nhau bằng liên kết cộng hóa trị phân cực."
+            },
+            {
+                topic: "Tính chất vật lý đặc trưng",
+                question: "Vì sao các hợp chất ion (như NaCl, CaO) thường là chất rắn, có nhiệt độ nóng chảy và nhiệt độ sôi rất cao?",
+                options: [
+                    "Vì lực hút tĩnh điện giữa các ion mang điện tích trái dấu trong mạng tinh thể rất bền vững.",
+                    "Vì khối lượng phân tử của các hợp chất ion luôn rất lớn.",
+                    "Vì các phân tử ion liên kết với nhau bằng lực tương tác yếu.",
+                    "Vì trong hợp chất ion không có sự chuyển động của các hạt."
+                ],
+                correct: 0,
+                explanation: "Trong tinh thể ion, các cation và anion hút nhau bằng lực hút tĩnh điện rất mạnh theo mọi hướng nên cần nhiệt độ rất cao mới phá vỡ được mạng tinh thể để làm nóng chảy hoặc hóa hơi."
+            },
+            {
+                topic: "Tính dẫn điện của hợp chất",
+                question: "Ở điều kiện thường, tinh thể muối ăn rắn (NaCl) không dẫn điện, nhưng dung dịch NaCl hoặc NaCl nóng chảy lại dẫn điện tốt vì:",
+                options: [
+                    "Khi tan trong nước hoặc nóng chảy, các ion Na<sup>+</sup> và Cl<sup>-</sup> tách rời và chuyển động tự do.",
+                    "Nước đã biến liên kết ion trong NaCl thành liên kết kim loại.",
+                    "Trong dung dịch xuất hiện các electron tự do tách ra từ hạt nhân Cl.",
+                    "Các phân tử NaCl trung hòa điện chuyển động nhanh trong nước."
+                ],
+                correct: 0,
+                explanation: "Ở trạng thái rắn, các ion Na<sup>+</sup> và Cl<sup>-</sup> bị giữ chặt tại các nút mạng tinh thể nên không dẫn điện. Khi nóng chảy hoặc hòa tan vào nước, các ion này trở nên tự do và tải được dòng điện."
+            },
+            {
+                topic: "So sánh tính chất vật lý",
+                question: "Các chất cộng hóa trị phân tử (như CO<sub>2</sub>, CH<sub>4</sub>, HCl) thường có nhiệt độ nóng chảy và nhiệt độ sôi thấp hơn nhiều so với hợp chất ion vì:",
+                options: [
+                    "Lực tương tác giữa các phân tử cộng hóa trị yếu hơn nhiều so với lực hút tĩnh điện giữa các ion.",
+                    "Liên kết cộng hóa trị bên trong phân tử dễ bị đứt gãy ở nhiệt độ phòng.",
+                    "Chất cộng hóa trị chỉ được tạo thành từ nguyên tử Hydrogen.",
+                    "Các phân tử cộng hóa trị luôn đẩy nhau rất mạnh."
+                ],
+                correct: 0,
+                explanation: "Khi đun nóng chất cộng hóa trị phân tử, chỉ cần cung cấp năng lượng nhỏ để thắng lực tương tác yếu giữa các phân tử (tương tác van der Waals), không cần phá vỡ liên kết cộng hóa trị bền bên trong phân tử."
+            }
+        ];
+
+        /**
+         * ============================================================================
+         * 2. BỘ TẠO ÂM THANH WEB AUDIO API (KHÔNG CẦN FILE ÂM THANH NGOÀI)
+         * ============================================================================
+         */
+        const SoundEngine = {
+            enabled: true,
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            },
+            tone(freq, type, dur, delay = 0, vol = 0.14) {
+                if (!this.enabled) return;
+                try {
+                    this.init();
+                    if (!this.ctx) return;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + delay);
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + delay + dur);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + delay);
+                    osc.stop(this.ctx.currentTime + delay + dur);
+                } catch (e) {}
+            },
+            click() { this.tone(540, 'sine', 0.07, 0, 0.1); },
+            buzz() {
+                this.tone(440, 'triangle', 0.09, 0, 0.16);
+                this.tone(660, 'triangle', 0.14, 0.08, 0.16);
+            },
+            correct() {
+                this.tone(523.25, 'sine', 0.11, 0, 0.17);
+                this.tone(659.25, 'sine', 0.11, 0.09, 0.17);
+                this.tone(783.99, 'sine', 0.22, 0.18, 0.19);
+            },
+            wrong() {
+                this.tone(230, 'sawtooth', 0.16, 0, 0.13);
+                this.tone(180, 'sawtooth', 0.22, 0.13, 0.13);
+            },
+            win() {
+                [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5].forEach((f, i) => {
+                    this.tone(f, 'triangle', 0.2, i * 0.11, 0.18);
+                });
+            }
+        };
+
+        /**
+         * ============================================================================
+         * 3. TRẠNG THÁI ỨNG DỤNG & KẾT NỐI MQTT THỜI GIAN THỰC
+         * ============================================================================
+         */
+        const AppState = {
+            mode: 'online',        // 'online' | 'bot' | 'offline_turn' | 'offline_speed'
+            role: 0,               // 0 = Chủ phòng (Đội Đỏ), 1 = Khách (Đội Xanh)
+            roomCode: '',
+            mqttClient: null,
+            mqttConnected: false,
+            clientId: 'hs_' + Math.random().toString(36).substring(2, 9),
+
+            teams: [
+                { name: 'Chiến Binh Ion', score: 0, correct: 0 },
+                { name: 'Biệt Đội Cộng Hóa Trị', score: 0, correct: 0 }
+            ],
+
+            qIndex: 0,
+            questionStartTs: 0,
+            timeLeft: 20,
+            questionLocked: false, // Đã có đội trả lời đúng hoặc hết giờ
+            activeOfflineTeam: null,
+            penaltyUntil: 0,
+            targetScore: 225,
+
+            timerId: null,
+            penaltyTimerId: null,
+            autoNextTimerId: null,
+            botTimerId: null,
+            heartbeatTimerId: null
+        };
+
+        /**
+         * ============================================================================
+         * 4. THAM CHIẾU PHẦN TỬ GIAO DIỆN (DOM)
+         * ============================================================================
+         */
+        const el = {
+            screenHome: document.getElementById('screen-home'),
+            screenLobby: document.getElementById('screen-lobby'),
+            screenRace: document.getElementById('screen-race'),
+            screenSummary: document.getElementById('screen-summary'),
+
+            tabOnline: document.getElementById('tab-online'),
+            tabOffline: document.getElementById('tab-offline'),
+            panelOnline: document.getElementById('panel-online'),
+            panelOffline: document.getElementById('panel-offline'),
+
+            onlinePlayerName: document.getElementById('online-player-name'),
+            btnCreateRoom: document.getElementById('btn-create-room'),
+            joinRoomCode: document.getElementById('join-room-code'),
+            btnJoinRoom: document.getElementById('btn-join-room'),
+            homeStatusBox: document.getElementById('home-status-box'),
+
+            offTeam1Name: document.getElementById('off-team1-name'),
+            offTeam2Name: document.getElementById('off-team2-name'),
+            offModeTurn: document.getElementById('off-mode-turn'),
+            offModeSpeed: document.getElementById('off-mode-speed'),
+            btnStartOffline: document.getElementById('btn-start-offline'),
+
+            btnLeaveLobby: document.getElementById('btn-leave-lobby'),
+            lobbyConnBadge: document.getElementById('lobby-conn-badge'),
+            lobbyConnText: document.getElementById('lobby-conn-text'),
+            lobbyCodeDisplay: document.getElementById('lobby-code-display'),
+            btnCopyRoomCode: document.getElementById('btn-copy-room-code'),
+            copyRoomLabel: document.getElementById('copy-room-label'),
+            lobbyP1Name: document.getElementById('lobby-p1-name'),
+            lobbyP2Card: document.getElementById('lobby-p2-card'),
+            lobbyP2Icon: document.getElementById('lobby-p2-icon'),
+            lobbyP2Name: document.getElementById('lobby-p2-name'),
+            lobbyP2Status: document.getElementById('lobby-p2-status'),
+            lobbyGuideText: document.getElementById('lobby-guide-text'),
+            btnOnlineStartRace: document.getElementById('btn-online-start-race'),
+            btnStartVsBot: document.getElementById('btn-start-vs-bot'),
+            lobbyControls: document.getElementById('lobby-controls'),
+            lobbyCountdown: document.getElementById('lobby-countdown'),
+            countdownNumber: document.getElementById('countdown-number'),
+
+            raceQProgress: document.getElementById('race-q-progress'),
+            raceModeTag: document.getElementById('race-mode-tag'),
+            lane1Name: document.getElementById('lane1-name'),
+            lane1Score: document.getElementById('lane1-score'),
+            lane1Fill: document.getElementById('lane1-fill'),
+            lane1Rocket: document.getElementById('lane1-rocket'),
+            lane2Name: document.getElementById('lane2-name'),
+            lane2Score: document.getElementById('lane2-score'),
+            lane2Fill: document.getElementById('lane2-fill'),
+            lane2Rocket: document.getElementById('lane2-rocket'),
+
+            statusTurnIcon: document.getElementById('status-turn-icon'),
+            statusTurnSub: document.getElementById('status-turn-sub'),
+            statusTurnMain: document.getElementById('status-turn-main'),
+            timerPill: document.getElementById('timer-pill'),
+            timerValue: document.getElementById('timer-value'),
+            penaltyAlert: document.getElementById('penalty-alert'),
+            penaltyCountdown: document.getElementById('penalty-countdown'),
+
+            offlineBuzzerBox: document.getElementById('offline-buzzer-box'),
+            btnBuzz1: document.getElementById('btn-buzz-1'),
+            btnBuzz2: document.getElementById('btn-buzz-2'),
+            buzzLabel1: document.getElementById('buzz-label-1'),
+            buzzLabel2: document.getElementById('buzz-label-2'),
+
+            questionBox: document.getElementById('question-box'),
+            qTopicBadge: document.getElementById('q-topic-badge'),
+            qScoreRule: document.getElementById('q-score-rule'),
+            qContent: document.getElementById('q-content'),
+            answersList: document.getElementById('answers-list'),
+
+            explanationBox: document.getElementById('explanation-box'),
+            expBadgeIcon: document.getElementById('exp-badge-icon'),
+            expHeading: document.getElementById('exp-heading'),
+            expSubPoints: document.getElementById('exp-sub-points'),
+            expBody: document.getElementById('exp-body'),
+            btnNextStep: document.getElementById('btn-next-step'),
+            btnNextLabel: document.getElementById('btn-next-label'),
+
+            summaryWinnerTitle: document.getElementById('summary-winner-title'),
+            summaryWinnerDesc: document.getElementById('summary-winner-desc'),
+            sumCard1: document.getElementById('sum-card-1'),
+            sumCard2: document.getElementById('sum-card-2'),
+            sumName1: document.getElementById('sum-name-1'),
+            sumName2: document.getElementById('sum-name-2'),
+            sumScore1: document.getElementById('sum-score-1'),
+            sumScore2: document.getElementById('sum-score-2'),
+            sumAcc1: document.getElementById('sum-acc-1'),
+            sumAcc2: document.getElementById('sum-acc-2'),
+            btnSummaryNotebook: document.getElementById('btn-summary-notebook'),
+            btnToggleReview: document.getElementById('btn-toggle-review'),
+            btnBackHome: document.getElementById('btn-back-home'),
+            summaryReviewPanel: document.getElementById('summary-review-panel'),
+            summaryReviewItems: document.getElementById('summary-review-items'),
+
+            btnOpenNotebook: document.getElementById('btn-open-notebook'),
+            notebookModal: document.getElementById('notebook-modal'),
+            btnCloseNotebook: document.getElementById('btn-close-notebook'),
+            btnOkNotebook: document.getElementById('btn-ok-notebook'),
+            btnToggleSound: document.getElementById('btn-toggle-sound'),
+            soundIcon: document.getElementById('sound-icon')
+        };
+
+        /**
+         * ============================================================================
+         * 5. ĐIỀU HƯỚNG MÀN HÌNH & CHUYỂN TAB
+         * ============================================================================
+         */
+        function showScreen(screenName) {
+            el.screenHome.classList.add('hidden');
+            el.screenLobby.classList.add('hidden');
+            el.screenRace.classList.add('hidden');
+            el.screenSummary.classList.add('hidden');
+
+            if (screenName === 'home') el.screenHome.classList.remove('hidden');
+            if (screenName === 'lobby') el.screenLobby.classList.remove('hidden');
+            if (screenName === 'race') el.screenRace.classList.remove('hidden');
+            if (screenName === 'summary') el.screenSummary.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showHomeStatus(msg, type = 'info') {
+            el.homeStatusBox.classList.remove('hidden');
+            el.homeStatusBox.textContent = msg;
+            if (type === 'error') {
+                el.homeStatusBox.className = 'p-3 rounded-xl text-xs sm:text-sm font-semibold text-center safe-text bg-rose-500/20 border border-rose-500/50 text-rose-200';
+            } else {
+                el.homeStatusBox.className = 'p-3 rounded-xl text-xs sm:text-sm font-semibold text-center safe-text bg-emerald-500/20 border border-emerald-500/50 text-emerald-200';
+            }
+        }
+
+        el.tabOnline.addEventListener('click', () => {
+            SoundEngine.click();
+            el.tabOnline.className = 'btn-touch py-2.5 px-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold text-xs sm:text-sm shadow';
+            el.tabOffline.className = 'btn-touch py-2.5 px-2 rounded-lg text-slate-300 hover:text-white font-bold text-xs sm:text-sm';
+            el.panelOnline.classList.remove('hidden');
+            el.panelOffline.classList.add('hidden');
+        });
+
+        el.tabOffline.addEventListener('click', () => {
+            SoundEngine.click();
+            el.tabOffline.className = 'btn-touch py-2.5 px-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-extrabold text-xs sm:text-sm shadow';
+            el.tabOnline.className = 'btn-touch py-2.5 px-2 rounded-lg text-slate-300 hover:text-white font-bold text-xs sm:text-sm';
+            el.panelOffline.classList.remove('hidden');
+            el.panelOnline.classList.add('hidden');
+        });
+
+        /**
+         * ============================================================================
+         * 6. KẾT NỐI MQTT WEBSOCKET (CÓ MÁY CHỦ DỰ PHÒNG & KHÔNG BAO GIỜ TREO NÚT)
+         * ============================================================================
+         */
+        function disconnectMqtt() {
+            clearInterval(AppState.heartbeatTimerId);
+            if (AppState.mqttClient) {
+                try { AppState.mqttClient.end(true); } catch (e) {}
+                AppState.mqttClient = null;
+            }
+            AppState.mqttConnected = false;
+        }
+
+        function connectMqttBroker(roomCode, onConnectedCallback) {
+            disconnectMqtt();
+
+            if (typeof window.mqtt === 'undefined') {
+                el.lobbyConnText.textContent = 'Chế độ ngoại tuyến (Không có MQTT)';
+                if (onConnectedCallback) onConnectedCallback(false);
+                return;
+            }
+
+            const brokers = [
+                'wss://broker.hivemq.com:8884/mqtt',
+                'wss://broker.emqx.io:8084/mqtt'
+            ];
+            let brokerIndex = 0;
+            let connectedOnce = false;
+
+            function tryConnect(url) {
+                el.lobbyConnText.textContent = brokerIndex === 0
+                    ? 'Đang kết nối máy chủ...'
+                    : 'Đang chuyển máy chủ dự phòng...';
+
+                const client = window.mqtt.connect(url, {
+                    clientId: AppState.clientId + '_' + Math.floor(Math.random() * 1000),
+                    clean: true,
+                    connectTimeout: 4000,
+                    reconnectPeriod: 3000
+                });
+
+                AppState.mqttClient = client;
+
+                // Nếu máy chủ đầu chậm quá 4 giây tự động chuyển sang máy chủ dự phòng
+                const fallbackTimeout = setTimeout(() => {
+                    if (!connectedOnce && brokerIndex === 0) {
+                        try { client.end(true); } catch (e) {}
+                        brokerIndex = 1;
+                        tryConnect(brokers[1]);
+                    }
+                }, 4100);
+
+                client.on('connect', () => {
+                    clearTimeout(fallbackTimeout);
+                    connectedOnce = true;
+                    AppState.mqttConnected = true;
+                    el.lobbyConnText.textContent = 'Đã kết nối trực tuyến ✓';
+
+                    const topic = `hoahoc10_race_${roomCode}`;
+                    client.subscribe(topic, { qos: 1 }, () => {
+                        if (onConnectedCallback) {
+                            onConnectedCallback(true);
+                            onConnectedCallback = null;
+                        }
+                    });
+                });
+
+                client.on('message', (topic, message) => {
+                    try {
+                        const packet = JSON.parse(message.toString());
+                        handleMqttPacket(packet);
+                    } catch (err) {
+                        console.error('Lỗi giải mã gói tin:', err);
+                    }
+                });
+
+                client.on('error', () => {
+                    if (!connectedOnce && brokerIndex === 0) {
+                        clearTimeout(fallbackTimeout);
+                        try { client.end(true); } catch (e) {}
+                        brokerIndex = 1;
+                        tryConnect(brokers[1]);
+                    }
+                });
+            }
+
+            tryConnect(brokers[0]);
+        }
+
+        function sendMqttPacket(payload) {
+            if (!AppState.mqttClient || !AppState.mqttConnected || !AppState.roomCode) return;
+            const topic = `hoahoc10_race_${AppState.roomCode}`;
+            const data = Object.assign({ sender: AppState.clientId, ts: Date.now() }, payload);
+            AppState.mqttClient.publish(topic, JSON.stringify(data), { qos: 1 });
+        }
+
+        /**
+         * TẠO PHÒNG THI ĐẤU (MÃ 4 CHỮ SỐ) - LUÔN MỞ SẢNH NGAY LẬP TỨC
+         */
+        el.btnCreateRoom.addEventListener('click', () => {
+            SoundEngine.buzz();
+
+            // Khóa tạm 1 giây chống bấm đúp
+            el.btnCreateRoom.disabled = true;
+            el.btnCreateRoom.textContent = '⏳ ĐANG MỞ PHÒNG...';
+            setTimeout(() => {
+                el.btnCreateRoom.disabled = false;
+                el.btnCreateRoom.textContent = '+ TẠO PHÒNG THI ĐẤU (2 MÁY)';
+            }, 1000);
+
+            const code = String(Math.floor(1000 + Math.random() * 9000));
+            const myName = el.onlinePlayerName.value.trim() || 'Chiến Binh Ion';
+
+            AppState.mode = 'online';
+            AppState.role = 0;
+            AppState.roomCode = code;
+            AppState.teams = [
+                { name: myName, score: 0, correct: 0 },
+                { name: 'Đang chờ đối thủ...', score: 0, correct: 0 }
+            ];
+
+            // Chuyển ngay sang sảnh chờ để học sinh thấy mã phòng tức thì
+            openLobbyScreen(code, true);
+
+            // Kết nối MQTT nền và phát tín hiệu duy trì phòng
+            connectMqttBroker(code, (ok) => {
+                if (ok) {
+                    sendMqttPacket({ type: 'HOST_READY', hostName: myName });
+                    clearInterval(AppState.heartbeatTimerId);
+                    AppState.heartbeatTimerId = setInterval(() => {
+                        if (!el.screenLobby.classList.contains('hidden')) {
+                            sendMqttPacket({ type: 'HOST_READY', hostName: AppState.teams[0].name });
+                        }
+                    }, 2500);
+                }
+            });
+        });
+
+        /**
+         * VÀO PHÒNG ĐÃ TẠO BẰNG MÃ 4 SỐ
+         */
+        el.btnJoinRoom.addEventListener('click', () => {
+            SoundEngine.buzz();
+            const code = el.joinRoomCode.value.trim();
+            if (!/^\d{4}$/.test(code)) {
+                showHomeStatus('Vui lòng nhập đúng mã phòng gồm 4 chữ số (ví dụ: 5831)!', 'error');
+                return;
+            }
+
+            const myName = el.onlinePlayerName.value.trim() || 'Biệt Đội Cộng Hóa Trị';
+            el.btnJoinRoom.disabled = true;
+            el.btnJoinRoom.textContent = 'ĐANG VÀO...';
+            showHomeStatus(`Đang tìm phòng số ${code}...`, 'info');
+
+            AppState.mode = 'online';
+            AppState.role = 1;
+            AppState.roomCode = code;
+            AppState.teams = [
+                { name: 'Chủ Phòng (Đội Đỏ)', score: 0, correct: 0 },
+                { name: myName, score: 0, correct: 0 }
+            ];
+
+            let joinedConfirmed = false;
+
+            connectMqttBroker(code, (ok) => {
+                el.btnJoinRoom.disabled = false;
+                el.btnJoinRoom.textContent = 'VÀO PHÒNG →';
+
+                if (!ok) {
+                    showHomeStatus('Không thể kết nối mạng. Hãy kiểm tra Wi-Fi/4G hoặc chọn tab "Chơi 1 Điện Thoại"!', 'error');
+                    return;
+                }
+
+                // Gửi yêu cầu tham gia phòng liên tục mỗi 1.5s cho đến khi chủ phòng xác nhận
+                sendMqttPacket({ type: 'JOIN', guestName: myName });
+                clearInterval(AppState.heartbeatTimerId);
+                AppState.heartbeatTimerId = setInterval(() => {
+                    if (!joinedConfirmed && !el.screenHome.classList.contains('hidden')) {
+                        sendMqttPacket({ type: 'JOIN', guestName: myName });
+                    }
+                }, 1500);
+
+                // Mở sảnh chờ sau 600ms để người chơi 2 sẵn sàng ngay
+                setTimeout(() => {
+                    joinedConfirmed = true;
+                    el.homeStatusBox.classList.add('hidden');
+                    openLobbyScreen(code, false);
+                    updateLobbyGuestConnected(myName);
+                }, 600);
+            });
+        });
+
+        function openLobbyScreen(code, isHost) {
+            showScreen('lobby');
+            el.lobbyCodeDisplay.textContent = code;
+            el.lobbyControls.classList.remove('hidden');
+            el.lobbyCountdown.classList.add('hidden');
+
+            el.lobbyP1Name.textContent = AppState.teams[0].name;
+
+            if (isHost) {
+                el.lobbyP2Card.className = 'p-3.5 rounded-2xl bg-slate-900/90 border-2 border-dashed border-slate-600 text-center';
+                el.lobbyP2Icon.classList.add('opacity-40');
+                el.lobbyP2Name.textContent = 'Đang chờ bạn vào...';
+                el.lobbyP2Name.className = 'text-sm font-extrabold text-slate-400 mt-1 safe-text';
+                el.lobbyP2Status.textContent = 'Chưa vào';
+                el.lobbyP2Status.className = 'mt-1.5 inline-block px-2 py-0.5 rounded-full bg-slate-800 text-[11px] font-bold text-slate-400';
+
+                el.lobbyGuideText.textContent = '⏳ Hãy đọc mã 4 số cho bạn cùng chơi nhập vào ô "Vào Phòng".';
+                el.btnOnlineStartRace.disabled = true;
+                el.btnOnlineStartRace.textContent = 'ĐANG CHỜ ĐỐI THỦ VÀO PHÒNG...';
+                el.btnOnlineStartRace.className = 'btn-touch w-full py-3.5 px-4 rounded-xl bg-slate-700 text-slate-400 font-extrabold text-sm sm:text-base cursor-not-allowed';
+                el.btnStartVsBot.classList.remove('hidden');
+            } else {
+                el.lobbyGuideText.textContent = '🎉 Bạn đã vào Đội Xanh! Đang chờ Chủ phòng bấm Bắt đầu cuộc đua...';
+                el.btnOnlineStartRace.disabled = true;
+                el.btnOnlineStartRace.textContent = 'CHỜ CHỦ PHÒNG BẮT ĐẦU...';
+                el.btnOnlineStartRace.className = 'btn-touch w-full py-3.5 px-4 rounded-xl bg-slate-700 text-slate-300 font-extrabold text-sm sm:text-base cursor-not-allowed';
+                el.btnStartVsBot.classList.add('hidden');
+            }
+        }
+
+        function updateLobbyGuestConnected(guestName) {
+            AppState.teams[1].name = guestName;
+            el.lobbyP2Card.className = 'p-3.5 rounded-2xl bg-gradient-to-b from-cyan-500/20 to-blue-500/10 border-2 border-cyan-500/60 text-center';
+            el.lobbyP2Icon.classList.remove('opacity-40');
+            el.lobbyP2Name.textContent = guestName;
+            el.lobbyP2Name.className = 'text-sm font-extrabold text-white mt-1 safe-text';
+            el.lobbyP2Status.textContent = 'Đã vào phòng ✓';
+            el.lobbyP2Status.className = 'mt-1.5 inline-block px-2 py-0.5 rounded-full bg-cyan-500/30 text-[11px] font-bold text-cyan-200';
+
+            if (AppState.role === 0) {
+                el.lobbyGuideText.textContent = '🎉 Đã kết nối đủ 2 đội! Bấm nút bên dưới để xuất phát ngay.';
+                el.btnOnlineStartRace.disabled = false;
+                el.btnOnlineStartRace.textContent = '🚀 BẮT ĐẦU CUỘC ĐUA (2 MÁY)';
+                el.btnOnlineStartRace.className = 'btn-touch w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white font-extrabold text-sm sm:text-base shadow-xl animate-pulse';
+            }
+        }
+
+        // Sao chép mã phòng 4 số
+        el.btnCopyRoomCode.addEventListener('click', () => {
+            SoundEngine.click();
+            const temp = document.createElement('input');
+            temp.value = AppState.roomCode;
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+
+            el.copyRoomLabel.textContent = '✓ Đã sao chép: ' + AppState.roomCode;
+            setTimeout(() => {
+                el.copyRoomLabel.textContent = 'Sao chép mã phòng';
+            }, 2200);
+        });
+
+        el.btnLeaveLobby.addEventListener('click', () => {
+            SoundEngine.click();
+            disconnectMqtt();
+            showScreen('home');
+        });
+
+        // Chủ phòng bấm bắt đầu đua 2 máy
+        el.btnOnlineStartRace.addEventListener('click', () => {
+            if (AppState.role !== 0) return;
+            SoundEngine.buzz();
+            clearInterval(AppState.heartbeatTimerId);
+            sendMqttPacket({
+                type: 'COUNTDOWN',
+                p1Name: AppState.teams[0].name,
+                p2Name: AppState.teams[1].name
+            });
+            runCountdownAndStartOnline();
+        });
+
+        // Nút dự phòng: Đấu ngay với Máy Bot thông minh
+        el.btnStartVsBot.addEventListener('click', () => {
+            SoundEngine.buzz();
+            disconnectMqtt();
+            AppState.mode = 'bot';
+            AppState.role = 0;
+            AppState.teams = [
+                { name: AppState.teams[0].name || 'Chiến Binh Ion', score: 0, correct: 0 },
+                { name: 'Bot Cộng Hóa Trị 🤖', score: 0, correct: 0 }
+            ];
+            startRaceSession();
+        });
+
+        function runCountdownAndStartOnline() {
+            el.lobbyControls.classList.add('hidden');
+            el.lobbyCountdown.classList.remove('hidden');
+            let sec = 3;
+            el.countdownNumber.textContent = sec;
+            SoundEngine.click();
+
+            const iv = setInterval(() => {
+                sec--;
+                if (sec > 0) {
+                    el.countdownNumber.textContent = sec;
+                    SoundEngine.click();
+                } else {
+                    clearInterval(iv);
+                    if (AppState.role === 0) {
+                        AppState.qIndex = 0;
+                        AppState.questionStartTs = Date.now();
+                        sendMqttPacket({
+                            type: 'QUESTION',
+                            qIndex: 0,
+                            scores: [0, 0],
+                            corrects: [0, 0]
+                        });
+                        startRaceSession();
+                    }
+                }
+            }, 850);
+        }
+
+        /**
+         * XỬ LÝ TẤT CẢ GÓI TIN ĐỒNG BỘ GIỮA 2 ĐIỆN THOẠI QUA MQTT
+         */
+        function handleMqttPacket(pkt) {
+            if (!pkt || pkt.sender === AppState.clientId) return;
+
+            if (pkt.type === 'HOST_READY' && AppState.role === 1) {
+                AppState.teams[0].name = pkt.hostName || 'Chủ phòng';
+                el.lobbyP1Name.textContent = AppState.teams[0].name;
+                sendMqttPacket({ type: 'JOIN', guestName: AppState.teams[1].name });
+            }
+
+            if (pkt.type === 'JOIN' && AppState.role === 0) {
+                SoundEngine.correct();
+                updateLobbyGuestConnected(pkt.guestName || 'Đội Xanh');
+                sendMqttPacket({ type: 'WELCOME', hostName: AppState.teams[0].name });
+            }
+
+            if (pkt.type === 'WELCOME' && AppState.role === 1) {
+                AppState.teams[0].name = pkt.hostName || 'Chủ phòng';
+                el.lobbyP1Name.textContent = AppState.teams[0].name;
+            }
+
+            if (pkt.type === 'COUNTDOWN' && AppState.role === 1) {
+                AppState.teams[0].name = pkt.p1Name;
+                AppState.teams[1].name = pkt.p2Name;
+                runCountdownAndStartOnline();
+            }
+
+            if (pkt.type === 'QUESTION') {
+                AppState.qIndex = pkt.qIndex;
+                AppState.teams[0].score = pkt.scores[0];
+                AppState.teams[1].score = pkt.scores[1];
+                AppState.teams[0].correct = pkt.corrects[0];
+                AppState.teams[1].correct = pkt.corrects[1];
+
+                if (!el.screenLobby.classList.contains('hidden')) {
+                    showScreen('race');
+                }
+                renderQuestionScreen();
+            }
+
+            // Chủ phòng nhận đáp án từ Người chơi 2 (Đội Xanh)
+            if (pkt.type === 'ANSWER_SUBMIT' && AppState.role === 0) {
+                if (!AppState.questionLocked && pkt.qIndex === AppState.qIndex) {
+                    evaluateRaceAnswer(1, pkt.choiceIndex);
+                }
+            }
+
+            // Cả 2 máy nhận kết quả chốt câu hỏi từ Chủ phòng
+            if (pkt.type === 'QUESTION_RESOLVED') {
+                AppState.teams[0].score = pkt.scores[0];
+                AppState.teams[1].score = pkt.scores[1];
+                AppState.teams[0].correct = pkt.corrects[0];
+                AppState.teams[1].correct = pkt.corrects[1];
+                updateRaceTrack();
+                displayResolution(pkt.winnerRole, pkt.earnedPoints, pkt.selectedOption);
+            }
+
+            if (pkt.type === 'FINISH') {
+                AppState.teams[0].score = pkt.scores[0];
+                AppState.teams[1].score = pkt.scores[1];
+                AppState.teams[0].correct = pkt.corrects[0];
+                AppState.teams[1].correct = pkt.corrects[1];
+                openSummaryScreen();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. THIẾT LẬP CHẾ ĐỘ CHƠI CHUNG 1 ĐIỆN THOẠI (OFFLINE)
+         * ============================================================================
+         */
+        let selectedOfflineType = 'offline_turn';
+
+        el.offModeTurn.addEventListener('click', () => {
+            SoundEngine.click();
+            selectedOfflineType = 'offline_turn';
+            el.offModeTurn.className = 'btn-touch p-3 rounded-xl border-2 border-indigo-400 bg-indigo-500/20 text-left';
+            el.offModeSpeed.className = 'btn-touch p-3 rounded-xl border border-slate-600 bg-slate-900/70 text-left';
+        });
+
+        el.offModeSpeed.addEventListener('click', () => {
+            SoundEngine.click();
+            selectedOfflineType = 'offline_speed';
+            el.offModeSpeed.className = 'btn-touch p-3 rounded-xl border-2 border-indigo-400 bg-indigo-500/20 text-left';
+            el.offModeTurn.className = 'btn-touch p-3 rounded-xl border border-slate-600 bg-slate-900/70 text-left';
+        });
+
+        el.btnStartOffline.addEventListener('click', () => {
+            SoundEngine.buzz();
+            disconnectMqtt();
+            AppState.mode = selectedOfflineType;
+            AppState.teams = [
+                { name: el.offTeam1Name.value.trim() || 'Chiến Binh Ion', score: 0, correct: 0 },
+                { name: el.offTeam2Name.value.trim() || 'Biệt Đội Cộng Hóa Trị', score: 0, correct: 0 }
+            ];
+            startRaceSession();
+        });
+
+        /**
+         * ============================================================================
+         * 8. LOGIC ĐƯỜNG ĐUA, CÂU HỎI & TÍNH ĐIỂM
+         * ============================================================================
+         */
+        function startRaceSession() {
+            AppState.qIndex = 0;
+            AppState.targetScore = 225;
+            showScreen('race');
+            renderQuestionScreen();
+        }
+
+        function updateRaceTrack() {
+            el.lane1Name.textContent = '⚡ ' + AppState.teams[0].name + (AppState.mode === 'online' && AppState.role === 0 ? ' (Bạn)' : '');
+            el.lane2Name.textContent = '🔗 ' + AppState.teams[1].name + (AppState.mode === 'online' && AppState.role === 1 ? ' (Bạn)' : '');
+            el.lane1Score.textContent = AppState.teams[0].score + ' đ';
+            el.lane2Score.textContent = AppState.teams[1].score + ' đ';
+
+            // Giới hạn vị trí từ 2% đến 87% để tên lửa không bao giờ tràn khỏi khung màn hình 360px
+            const pos1 = Math.min(87, Math.max(2, (AppState.teams[0].score / AppState.targetScore) * 85 + 2));
+            const pos2 = Math.min(87, Math.max(2, (AppState.teams[1].score / AppState.targetScore) * 85 + 2));
+
+            el.lane1Rocket.style.left = pos1 + '%';
+            el.lane1Fill.style.width = Math.min(100, pos1 + 6) + '%';
+
+            el.lane2Rocket.style.left = pos2 + '%';
+            el.lane2Fill.style.width = Math.min(100, pos2 + 6) + '%';
+        }
+
+        function renderQuestionScreen() {
+            clearInterval(AppState.timerId);
+            clearInterval(AppState.penaltyTimerId);
+            clearTimeout(AppState.autoNextTimerId);
+            clearTimeout(AppState.botTimerId);
+
+            AppState.questionLocked = false;
+            AppState.penaltyUntil = 0;
+            AppState.timeLeft = 20;
+            AppState.questionStartTs = Date.now();
+
+            el.penaltyAlert.classList.add('hidden');
+            el.explanationBox.classList.add('hidden');
+            updateRaceTrack();
+
+            const q = CHEMISTRY_QUESTIONS[AppState.qIndex];
+            el.raceQProgress.textContent = `Câu ${AppState.qIndex + 1} / ${CHEMISTRY_QUESTIONS.length}`;
+            el.qTopicBadge.textContent = q.topic;
+            el.qContent.innerHTML = q.question;
+
+            // Tạo 4 nút đáp án A, B, C, D lớn dễ bấm bằng ngón tay cái
+            el.answersList.innerHTML = '';
+            const letters = ['A', 'B', 'C', 'D'];
+            q.options.forEach((optText, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'ans-btn btn-touch w-full min-h-[56px] text-left p-3.5 rounded-xl bg-slate-900/95 hover:bg-slate-700/90 border border-slate-600 text-slate-100 flex items-center gap-3';
+                btn.innerHTML = `
+                    <span class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-600 text-indigo-300 font-black text-sm flex items-center justify-center shrink-0">
+                        ${letters[idx]}
+                    </span>
+                    <span class="text-sm sm:text-base font-medium leading-snug safe-text flex-1">
+                        ${optText}
+                    </span>
+                `;
+                btn.addEventListener('click', () => onPlayerClickAnswer(idx));
+                el.answersList.appendChild(btn);
+            });
+
+            // Cấu hình hiển thị theo từng chế độ
+            if (AppState.mode === 'offline_speed') {
+                AppState.activeOfflineTeam = null;
+                el.offlineBuzzerBox.classList.remove('hidden');
+                el.buzzLabel1.textContent = AppState.teams[0].name;
+                el.buzzLabel2.textContent = AppState.teams[1].name;
+                setAnswerButtonsDisabled(true);
+
+                el.statusTurnIcon.textContent = '🔔';
+                el.statusTurnSub.textContent = 'Chế độ bấm chuông';
+                el.statusTurnMain.textContent = 'Đang chờ đội giành quyền...';
+                el.statusTurnMain.className = 'text-xs sm:text-sm font-extrabold text-amber-300 truncate';
+                el.timerValue.textContent = '20s';
+            } else if (AppState.mode === 'offline_turn') {
+                el.offlineBuzzerBox.classList.add('hidden');
+                AppState.activeOfflineTeam = AppState.qIndex % 2;
+                setAnswerButtonsDisabled(false);
+
+                const team = AppState.teams[AppState.activeOfflineTeam];
+                el.statusTurnIcon.textContent = AppState.activeOfflineTeam === 0 ? '⚡' : '🔗';
+                el.statusTurnSub.textContent = 'Luân phiên từng lượt';
+                el.statusTurnMain.textContent = `Lượt của: ${team.name}`;
+                el.statusTurnMain.className = AppState.activeOfflineTeam === 0
+                    ? 'text-xs sm:text-sm font-extrabold text-rose-300 truncate'
+                    : 'text-xs sm:text-sm font-extrabold text-cyan-300 truncate';
+                startCountdownTimer();
+            } else {
+                // Chế độ Online 2 máy hoặc đấu với Bot
+                el.offlineBuzzerBox.classList.add('hidden');
+                setAnswerButtonsDisabled(false);
+
+                const myTeam = AppState.teams[AppState.role];
+                el.statusTurnIcon.textContent = AppState.role === 0 ? '⚡' : '🔗';
+                el.statusTurnSub.textContent = AppState.mode === 'online' ? 'Đua trực tuyến 2 máy' : 'Đấu tốc độ với Bot';
+                el.statusTurnMain.textContent = `Bạn điều khiển: ${myTeam.name}`;
+                el.statusTurnMain.className = AppState.role === 0
+                    ? 'text-xs sm:text-sm font-extrabold text-rose-300 truncate'
+                    : 'text-xs sm:text-sm font-extrabold text-cyan-300 truncate';
+                startCountdownTimer();
+
+                // Lên lịch trả lời cho Bot nếu ở chế độ đấu máy
+                if (AppState.mode === 'bot') {
+                    const botThinkMs = 4500 + Math.random() * 5500;
+                    AppState.botTimerId = setTimeout(() => {
+                        if (!AppState.questionLocked) {
+                            const botCorrect = Math.random() < 0.72;
+                            const choice = botCorrect ? q.correct : (q.correct + 1) % 4;
+                            if (botCorrect) {
+                                evaluateRaceAnswer(1, choice);
+                            }
+                        }
+                    }, botThinkMs);
+                }
+            }
+        }
+
+        function setAnswerButtonsDisabled(disabled) {
+            el.answersList.querySelectorAll('.ans-btn').forEach(b => {
+                b.disabled = disabled;
+                if (disabled) b.classList.add('opacity-55', 'cursor-not-allowed');
+                else b.classList.remove('opacity-55', 'cursor-not-allowed');
+            });
+        }
+
+        // Bấm chuông giành quyền ở chế độ 1 máy
+        el.btnBuzz1.addEventListener('click', () => handleOfflineBuzz(0));
+        el.btnBuzz2.addEventListener('click', () => handleOfflineBuzz(1));
+
+        function handleOfflineBuzz(teamIdx) {
+            if (AppState.mode !== 'offline_speed' || AppState.activeOfflineTeam !== null || AppState.questionLocked) return;
+            SoundEngine.buzz();
+            AppState.activeOfflineTeam = teamIdx;
+            el.offlineBuzzerBox.classList.add('hidden');
+            setAnswerButtonsDisabled(false);
+
+            const team = AppState.teams[teamIdx];
+            el.statusTurnIcon.textContent = teamIdx === 0 ? '⚡' : '🔗';
+            el.statusTurnSub.textContent = 'Đã giành quyền trả lời';
+            el.statusTurnMain.textContent = `Lượt của: ${team.name}`;
+            el.statusTurnMain.className = teamIdx === 0
+                ? 'text-xs sm:text-sm font-extrabold text-rose-300 truncate'
+                : 'text-xs sm:text-sm font-extrabold text-cyan-300 truncate';
+            startCountdownTimer();
+        }
+
+        function startCountdownTimer() {
+            clearInterval(AppState.timerId);
+            AppState.timeLeft = 20;
+            updateTimerUI();
+
+            AppState.timerId = setInterval(() => {
+                AppState.timeLeft--;
+                updateTimerUI();
+
+                if (AppState.timeLeft <= 0) {
+                    clearInterval(AppState.timerId);
+                    if (!AppState.questionLocked) {
+                        if (AppState.mode === 'online') {
+                            if (AppState.role === 0) {
+                                resolveOnlineQuestion(-1, 0, -1);
+                            }
+                        } else {
+                            AppState.questionLocked = true;
+                            displayResolution(-1, 0, -1);
+                        }
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateTimerUI() {
+            el.timerValue.textContent = AppState.timeLeft + 's';
+            if (AppState.timeLeft <= 5) {
+                el.timerPill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950 border border-rose-500 animate-pulse shrink-0';
+                el.timerValue.className = 'font-black text-sm sm:text-base text-rose-300 tabular-nums';
+            } else {
+                el.timerPill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-600 shrink-0';
+                el.timerValue.className = 'font-black text-sm sm:text-base text-white tabular-nums';
+            }
+        }
+
+        /**
+         * XỬ LÝ KHI NGƯỜI CHƠI CHỌN ĐÁP ÁN
+         */
+        function onPlayerClickAnswer(choiceIdx) {
+            if (AppState.questionLocked) return;
+            if (Date.now() < AppState.penaltyUntil) return;
+
+            const q = CHEMISTRY_QUESTIONS[AppState.qIndex];
+
+            // Trường hợp 1: Chơi chung 1 máy (Luân phiên hoặc Bấm chuông)
+            if (AppState.mode === 'offline_turn' || AppState.mode === 'offline_speed') {
+                if (AppState.activeOfflineTeam === null) return;
+                AppState.questionLocked = true;
+                clearInterval(AppState.timerId);
+
+                const isCorrect = choiceIdx === q.correct;
+                let points = 0;
+                if (isCorrect) {
+                    const speedBonus = Math.min(5, Math.ceil(AppState.timeLeft / 4));
+                    points = 10 + speedBonus;
+                    AppState.teams[AppState.activeOfflineTeam].score += points;
+                    AppState.teams[AppState.activeOfflineTeam].correct += 1;
+                    updateRaceTrack();
+                }
+                displayResolution(isCorrect ? AppState.activeOfflineTeam : -2, points, choiceIdx);
+                return;
+            }
+
+            // Trường hợp 2: Đua Online 2 máy hoặc Đấu Bot
+            const isCorrect = choiceIdx === q.correct;
+            if (!isCorrect) {
+                // Chọn sai: Khóa nút trong 3 giây để nhường quyền cho đối thủ
+                triggerThreeSecondPenalty(choiceIdx);
+                return;
+            }
+
+            // Chọn đúng!
+            if (AppState.mode === 'bot') {
+                evaluateRaceAnswer(0, choiceIdx);
+            } else if (AppState.mode === 'online') {
+                if (AppState.role === 0) {
+                    evaluateRaceAnswer(0, choiceIdx);
+                } else {
+                    // Người chơi 2 gửi đáp án đúng về cho Chủ phòng chốt điểm
+                    setAnswerButtonsDisabled(true);
+                    sendMqttPacket({
+                        type: 'ANSWER_SUBMIT',
+                        qIndex: AppState.qIndex,
+                        choiceIndex: choiceIdx
+                    });
+                }
+            }
+        }
+
+        function triggerThreeSecondPenalty(wrongIdx) {
+            SoundEngine.wrong();
+            el.questionBox.classList.add('animate-shake');
+            setTimeout(() => el.questionBox.classList.remove('animate-shake'), 320);
+
+            AppState.penaltyUntil = Date.now() + 3000;
+            setAnswerButtonsDisabled(true);
+            el.penaltyAlert.classList.remove('hidden');
+            el.penaltyCountdown.textContent = '3';
+
+            const btns = el.answersList.querySelectorAll('.ans-btn');
+            if (btns[wrongIdx]) {
+                btns[wrongIdx].classList.add('border-rose-500', 'bg-rose-950/60');
+            }
+
+            clearInterval(AppState.penaltyTimerId);
+            AppState.penaltyTimerId = setInterval(() => {
+                const left = Math.ceil((AppState.penaltyUntil - Date.now()) / 1000);
+                if (left > 0) {
+                    el.penaltyCountdown.textContent = left;
+                } else {
+                    clearInterval(AppState.penaltyTimerId);
+                    el.penaltyAlert.classList.add('hidden');
+                    if (!AppState.questionLocked) {
+                        setAnswerButtonsDisabled(false);
+                    }
+                }
+            }, 250);
+        }
+
+        function evaluateRaceAnswer(winnerRole, choiceIdx) {
+            if (AppState.questionLocked) return;
+            const q = CHEMISTRY_QUESTIONS[AppState.qIndex];
+            if (choiceIdx !== q.correct) return;
+
+            const elapsed = (Date.now() - AppState.questionStartTs) / 1000;
+            const speedBonus = Math.max(0, Math.min(5, Math.round((20 - elapsed) / 4)));
+            const earned = 10 + speedBonus;
+
+            AppState.teams[winnerRole].score += earned;
+            AppState.teams[winnerRole].correct += 1;
+            updateRaceTrack();
+
+            if (AppState.mode === 'online' && AppState.role === 0) {
+                resolveOnlineQuestion(winnerRole, earned, choiceIdx);
+            } else {
+                AppState.questionLocked = true;
+                displayResolution(winnerRole, earned, choiceIdx);
+            }
+        }
+
+        function resolveOnlineQuestion(winnerRole, earnedPoints, selectedOption) {
+            AppState.questionLocked = true;
+            sendMqttPacket({
+                type: 'QUESTION_RESOLVED',
+                winnerRole: winnerRole,
+                earnedPoints: earnedPoints,
+                selectedOption: selectedOption,
+                scores: [AppState.teams[0].score, AppState.teams[1].score],
+                corrects: [AppState.teams[0].correct, AppState.teams[1].correct]
+            });
+            displayResolution(winnerRole, earnedPoints, selectedOption);
+        }
+
+        /**
+         * HIỂN THỊ KẾT QUẢ & GIẢI MÃ BẢN CHẤT HÓA HỌC SAU MỖI CÂU
+         */
+        function displayResolution(winnerRole, earnedPoints, selectedOption) {
+            clearInterval(AppState.timerId);
+            clearInterval(AppState.penaltyTimerId);
+            clearTimeout(AppState.botTimerId);
+            AppState.questionLocked = true;
+            el.penaltyAlert.classList.add('hidden');
+
+            const q = CHEMISTRY_QUESTIONS[AppState.qIndex];
+            const btns = el.answersList.querySelectorAll('.ans-btn');
+
+            btns.forEach((b, idx) => {
+                b.disabled = true;
+                b.classList.remove('opacity-55', 'hover:bg-slate-700/90');
+                if (idx === q.correct) {
+                    b.className = 'ans-btn w-full min-h-[56px] text-left p-3.5 rounded-xl bg-emerald-600/30 border-2 border-emerald-400 text-white flex items-center gap-3 shadow-md';
+                    b.querySelector('span:first-child').className = 'w-8 h-8 rounded-lg bg-emerald-500 text-slate-950 font-black text-sm flex items-center justify-center shrink-0';
+                } else if (idx === selectedOption && selectedOption !== q.correct) {
+                    b.className = 'ans-btn w-full min-h-[56px] text-left p-3.5 rounded-xl bg-rose-600/30 border-2 border-rose-400 text-white flex items-center gap-3';
+                    b.querySelector('span:first-child').className = 'w-8 h-8 rounded-lg bg-rose-500 text-white font-black text-sm flex items-center justify-center shrink-0';
+                } else {
+                    b.classList.add('opacity-45');
+                }
+            });
+
+            el.explanationBox.classList.remove('hidden');
+
+            if (winnerRole === 0 || winnerRole === 1) {
+                const winTeam = AppState.teams[winnerRole];
+                const isMe = (AppState.mode === 'online' && winnerRole === AppState.role) || (AppState.mode === 'bot' && winnerRole === 0) || AppState.mode.startsWith('offline');
+                if (isMe) SoundEngine.correct(); else SoundEngine.buzz();
+
+                el.explanationBox.className = 'w-full rounded-2xl p-4 sm:p-5 border-2 border-emerald-500/60 bg-emerald-950/50 shadow-xl animate-fade-up';
+                el.expBadgeIcon.className = 'w-8 h-8 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center text-base font-black shrink-0 mt-0.5';
+                el.expBadgeIcon.textContent = '✓';
+                el.expHeading.textContent = `Chính xác! ${winTeam.name} ghi điểm!`;
+                el.expHeading.className = 'text-base font-extrabold text-emerald-300 mb-0.5 safe-text';
+                el.expSubPoints.textContent = `+${earnedPoints} điểm (Bứt tốc trên đường đua)`;
+                el.expSubPoints.className = 'text-xs font-bold uppercase tracking-wide text-emerald-400 mb-2.5';
+            } else if (winnerRole === -2) {
+                SoundEngine.wrong();
+                const failTeam = AppState.teams[AppState.activeOfflineTeam];
+                el.explanationBox.className = 'w-full rounded-2xl p-4 sm:p-5 border-2 border-rose-500/60 bg-rose-950/45 shadow-xl animate-fade-up';
+                el.expBadgeIcon.className = 'w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center text-base font-black shrink-0 mt-0.5';
+                el.expBadgeIcon.textContent = '✕';
+                el.expHeading.textContent = `Chưa chính xác rồi ${failTeam.name}!`;
+                el.expHeading.className = 'text-base font-extrabold text-rose-300 mb-0.5 safe-text';
+                el.expSubPoints.textContent = '+0 điểm (Xem bản chất bên dưới để rút kinh nghiệm)';
+                el.expSubPoints.className = 'text-xs font-bold uppercase tracking-wide text-rose-400 mb-2.5';
+            } else {
+                SoundEngine.wrong();
+                el.explanationBox.className = 'w-full rounded-2xl p-4 sm:p-5 border-2 border-amber-500/60 bg-amber-950/40 shadow-xl animate-fade-up';
+                el.expBadgeIcon.className = 'w-8 h-8 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center text-base font-black shrink-0 mt-0.5';
+                el.expBadgeIcon.textContent = '⏱';
+                el.expHeading.textContent = 'Hết thời gian 20 giây!';
+                el.expHeading.className = 'text-base font-extrabold text-amber-300 mb-0.5 safe-text';
+                el.expSubPoints.textContent = '+0 điểm cho cả 2 đội';
+                el.expSubPoints.className = 'text-xs font-bold uppercase tracking-wide text-amber-400 mb-2.5';
+            }
+
+            el.expBody.innerHTML = q.explanation;
+
+            const isLast = AppState.qIndex >= CHEMISTRY_QUESTIONS.length - 1;
+            if (AppState.mode === 'online') {
+                if (AppState.role === 0) {
+                    el.btnNextStep.classList.remove('hidden');
+                    el.btnNextLabel.textContent = isLast ? 'Xem kết quả chung cuộc 🏆' : 'Tiếp tục ngay (tự chuyển sau 4.5s)';
+                } else {
+                    el.btnNextStep.classList.add('hidden');
+                }
+                // Tự động chuyển câu sau 4.5 giây đồng bộ trên 2 điện thoại
+                clearTimeout(AppState.autoNextTimerId);
+                AppState.autoNextTimerId = setTimeout(() => {
+                    if (AppState.role === 0) goToNextQuestion();
+                }, 4500);
+            } else {
+                el.btnNextStep.classList.remove('hidden');
+                el.btnNextLabel.textContent = isLast ? 'Xem kết quả chung cuộc 🏆' : 'Chặng đua tiếp theo';
+            }
+
+            setTimeout(() => {
+                el.explanationBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+
+        el.btnNextStep.addEventListener('click', () => {
+            SoundEngine.click();
+            goToNextQuestion();
+        });
+
+        function goToNextQuestion() {
+            clearTimeout(AppState.autoNextTimerId);
+            if (AppState.qIndex < CHEMISTRY_QUESTIONS.length - 1) {
+                AppState.qIndex++;
+                if (AppState.mode === 'online' && AppState.role === 0) {
+                    sendMqttPacket({
+                        type: 'QUESTION',
+                        qIndex: AppState.qIndex,
+                        scores: [AppState.teams[0].score, AppState.teams[1].score],
+                        corrects: [AppState.teams[0].correct, AppState.teams[1].correct]
+                    });
+                }
+                renderQuestionScreen();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                if (AppState.mode === 'online' && AppState.role === 0) {
+                    sendMqttPacket({
+                        type: 'FINISH',
+                        scores: [AppState.teams[0].score, AppState.teams[1].score],
+                        corrects: [AppState.teams[0].correct, AppState.teams[1].correct]
+                    });
+                }
+                openSummaryScreen();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 9. MÀN HÌNH TỔNG KẾT & SỔ TAY ÔN TẬP
+         * ============================================================================
+         */
+        function openSummaryScreen() {
+            clearInterval(AppState.timerId);
+            clearTimeout(AppState.autoNextTimerId);
+            clearTimeout(AppState.botTimerId);
+            showScreen('summary');
+
+            const t1 = AppState.teams[0];
+            const t2 = AppState.teams[1];
+            const totalQ = CHEMISTRY_QUESTIONS.length;
+
+            el.sumName1.textContent = t1.name;
+            el.sumScore1.textContent = t1.score + ' đ';
+            el.sumAcc1.textContent = `Đúng: ${t1.correct}/${totalQ} câu (${Math.round((t1.correct / totalQ) * 100)}%)`;
+
+            el.sumName2.textContent = t2.name;
+            el.sumScore2.textContent = t2.score + ' đ';
+            el.sumAcc2.textContent = `Đúng: ${t2.correct}/${totalQ} câu (${Math.round((t2.correct / totalQ) * 100)}%)`;
+
+            el.sumCard1.classList.remove('ring-4', 'ring-amber-400/70');
+            el.sumCard2.classList.remove('ring-4', 'ring-amber-400/70');
+
+            if (t1.score > t2.score) {
+                el.summaryWinnerTitle.textContent = `🎉 ${t1.name} VÔ ĐỊCH!`;
+                el.summaryWinnerDesc.textContent = `Dẫn đầu đường đua với ${t1.score} điểm đầy thuyết phục!`;
+                el.sumCard1.classList.add('ring-4', 'ring-amber-400/70');
+            } else if (t2.score > t1.score) {
+                el.summaryWinnerTitle.textContent = `🎉 ${t2.name} VÔ ĐỊCH!`;
+                el.summaryWinnerDesc.textContent = `Dẫn đầu đường đua với ${t2.score} điểm đầy thuyết phục!`;
+                el.sumCard2.classList.add('ring-4', 'ring-amber-400/70');
+            } else {
+                el.summaryWinnerTitle.textContent = '🤝 HÒA NHAU KỊCH TÍNH!';
+                el.summaryWinnerDesc.textContent = `Cả hai đội cùng đạt ${t1.score} điểm ngang tài ngang sức!`;
+            }
+
+            // Render 15 câu ôn tập
+            el.summaryReviewItems.innerHTML = '';
+            CHEMISTRY_QUESTIONS.forEach((q, idx) => {
+                const card = document.createElement('div');
+                card.className = 'p-3 rounded-xl bg-slate-900 border border-slate-700 safe-text';
+                card.innerHTML = `
+                    <div class="text-xs font-bold text-indigo-400 mb-1">Câu ${idx + 1} • ${q.topic}</div>
+                    <div class="text-sm font-bold text-white mb-1">${q.question}</div>
+                    <div class="text-xs sm:text-sm text-emerald-300 font-semibold mb-1.5">✓ Đáp án: ${q.options[q.correct]}</div>
+                    <div class="text-xs text-slate-300 bg-slate-800/90 p-2 rounded-lg leading-relaxed">💡 ${q.explanation}</div>
+                `;
+                el.summaryReviewItems.appendChild(card);
+            });
+
+            SoundEngine.win();
+            runConfettiEffect();
+        }
+
+        el.btnToggleReview.addEventListener('click', () => {
+            SoundEngine.click();
+            el.summaryReviewPanel.classList.toggle('hidden');
+            if (!el.summaryReviewPanel.classList.contains('hidden')) {
+                el.summaryReviewPanel.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+
+        el.btnBackHome.addEventListener('click', () => {
+            SoundEngine.click();
+            disconnectMqtt();
+            el.summaryReviewPanel.classList.add('hidden');
+            showScreen('home');
+        });
+
+        /**
+         * ============================================================================
+         * 10. ĐIỀU KHIỂN SỔ TAY KIẾN THỨC & ÂM THANH
+         * ============================================================================
+         */
+        function openNotebookModal() {
+            SoundEngine.click();
+            el.notebookModal.classList.remove('hidden');
+        }
+        function closeNotebookModal() {
+            SoundEngine.click();
+            el.notebookModal.classList.add('hidden');
+        }
+
+        el.btnOpenNotebook.addEventListener('click', openNotebookModal);
+        el.btnSummaryNotebook.addEventListener('click', openNotebookModal);
+        el.btnCloseNotebook.addEventListener('click', closeNotebookModal);
+        el.btnOkNotebook.addEventListener('click', closeNotebookModal);
+        el.notebookModal.addEventListener('click', (e) => {
+            if (e.target === el.notebookModal) closeNotebookModal();
+        });
+
+        el.btnToggleSound.addEventListener('click', () => {
+            SoundEngine.enabled = !SoundEngine.enabled;
+            el.soundIcon.textContent = SoundEngine.enabled ? '🔊' : '🔇';
+            if (SoundEngine.enabled) SoundEngine.click();
+        });
+
+        /**
+         * ============================================================================
+         * 11. HIỆU ỨNG PHÁO HOA ĂN MỪNG (CANVAS RESPONSIVE)
+         * ============================================================================
+         */
+        function runConfettiEffect() {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const colors = ['#f43f5e', '#06b6d4', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899'];
+            const pieces = Array.from({ length: 90 }, () => ({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height - canvas.height,
+                w: Math.random() * 8 + 5,
+                h: Math.random() * 5 + 3,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                vy: Math.random() * 3.5 + 2,
+                vx: Math.random() * 2 - 1,
+                rot: Math.random() * 360,
+                vrot: Math.random() * 7 - 3.5
+            }));
+
+            let frame = 0;
+            function step() {
+                frame++;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                pieces.forEach(p => {
+                    p.y += p.vy;
+                    p.x += p.vx;
+                    p.rot += p.vrot;
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate((p.rot * Math.PI) / 180);
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+                    ctx.restore();
+                });
+                if (frame < 170) requestAnimationFrame(step);
+                else ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            step();
+        }
+    </script>
+</body>
+</html>
